@@ -19,18 +19,37 @@ const UserVerification = () => {
 
   const startCamera = useCallback(async () => {
     try {
+      // Check if mediaDevices is supported
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Camera not supported in this browser");
+      }
+
       const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480 }
+        video: { 
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          facingMode: 'user'
+        }
       });
+      
       setStream(mediaStream);
+      
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
+        // Ensure video plays
+        try {
+          await videoRef.current.play();
+        } catch (playError) {
+          console.log("Video autoplay failed, user interaction required");
+        }
       }
+      
       setIsCapturing(true);
     } catch (error) {
+      console.error("Camera error:", error);
       toast({
-        title: "Camera Error",
-        description: "Unable to access camera. Please check permissions.",
+        title: "Camera Error", 
+        description: error instanceof Error ? error.message : "Unable to access camera. Please check permissions and try again.",
         variant: "destructive",
       });
     }
@@ -121,6 +140,7 @@ const UserVerification = () => {
                       ref={videoRef}
                       autoPlay
                       playsInline
+                      muted
                       className="w-full h-80 object-cover"
                     />
                   ) : (
