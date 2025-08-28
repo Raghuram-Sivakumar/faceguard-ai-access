@@ -19,11 +19,14 @@ const UserVerification = () => {
 
   const startCamera = useCallback(async () => {
     try {
+      console.log("Starting camera...");
+      
       // Check if mediaDevices is supported
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error("Camera not supported in this browser");
       }
 
+      console.log("Requesting camera access...");
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: { 
           width: { ideal: 640 },
@@ -32,19 +35,27 @@ const UserVerification = () => {
         }
       });
       
+      console.log("Camera stream obtained:", mediaStream);
       setStream(mediaStream);
       
       if (videoRef.current) {
+        console.log("Setting video source...");
         videoRef.current.srcObject = mediaStream;
-        // Ensure video plays
-        try {
-          await videoRef.current.play();
-        } catch (playError) {
-          console.log("Video autoplay failed, user interaction required");
-        }
+        
+        // Wait for video to load metadata
+        videoRef.current.onloadedmetadata = async () => {
+          console.log("Video metadata loaded");
+          try {
+            await videoRef.current!.play();
+            console.log("Video playing successfully");
+            setIsCapturing(true);
+          } catch (playError) {
+            console.error("Video play failed:", playError);
+            // Try to play on user interaction
+            setIsCapturing(true);
+          }
+        };
       }
-      
-      setIsCapturing(true);
     } catch (error) {
       console.error("Camera error:", error);
       toast({
@@ -142,6 +153,12 @@ const UserVerification = () => {
                       playsInline
                       muted
                       className="w-full h-80 object-cover"
+                      onCanPlay={() => {
+                        console.log("Video can play");
+                        if (videoRef.current) {
+                          videoRef.current.play().catch(console.error);
+                        }
+                      }}
                     />
                   ) : (
                     <div className="w-full h-80 flex items-center justify-center">
