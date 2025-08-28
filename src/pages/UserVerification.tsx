@@ -11,6 +11,7 @@ const UserVerification = () => {
   const { toast } = useToast();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
@@ -27,12 +28,14 @@ const UserVerification = () => {
       }
 
       console.log("Requesting camera access...");
+      setIsCapturing(true);
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: { 
           width: { ideal: 640 },
           height: { ideal: 480 },
           facingMode: 'user'
-        }
+        },
+        audio: false,
       });
       
       console.log("Camera stream obtained:", mediaStream);
@@ -41,23 +44,31 @@ const UserVerification = () => {
       if (videoRef.current) {
         console.log("Setting video source...");
         videoRef.current.srcObject = mediaStream;
-        
-        // Wait for video to load metadata
-        videoRef.current.onloadedmetadata = async () => {
-          console.log("Video metadata loaded");
+        videoRef.current.muted = true;
+
+        const tryPlay = async () => {
           try {
             await videoRef.current!.play();
             console.log("Video playing successfully");
-            setIsCapturing(true);
-          } catch (playError) {
-            console.error("Video play failed:", playError);
-            // Try to play on user interaction
-            setIsCapturing(true);
+          } catch (err) {
+            console.error("Video play failed:", err);
           }
         };
+
+        videoRef.current.onloadedmetadata = () => {
+          console.log("Video metadata loaded");
+          tryPlay();
+        };
+        videoRef.current.oncanplay = () => {
+          console.log("Video can play (event)");
+        };
+
+        // Attempt immediate play as well
+        tryPlay();
       }
     } catch (error) {
       console.error("Camera error:", error);
+      setIsCapturing(false);
       toast({
         title: "Camera Error", 
         description: error instanceof Error ? error.message : "Unable to access camera. Please check permissions and try again.",
@@ -75,21 +86,44 @@ const UserVerification = () => {
   }, [stream]);
 
   const captureImage = useCallback(() => {
-    if (videoRef.current && canvasRef.current) {
-      const canvas = canvasRef.current;
-      const video = videoRef.current;
-      const context = canvas.getContext('2d');
-      
-      if (context) {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        context.drawImage(video, 0, 0);
-        const imageData = canvas.toDataURL('image/jpeg');
-        setCapturedImage(imageData);
-        stopCamera();
-      }
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+
+    if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
+      toast({
+        title: "Camera not ready",
+        description: "Please wait a moment and try again.",
+        variant: "destructive",
+      });
+      return;
     }
+
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    context.drawImage(video, 0, 0);
+    const imageData = canvas.toDataURL('image/jpeg');
+    setCapturedImage(imageData);
+    stopCamera();
+  }, [stopCamera, toast]);
+  
+  const onFileSelected = useCallback((e: any) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setCapturedImage(reader.result as string);
+      stopCamera();
+    };
+    reader.readAsDataURL(file);
   }, [stopCamera]);
+
+  const triggerFileInput = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
 
   const verifyUser = useCallback(async () => {
     if (!capturedImage) return;
@@ -172,13 +206,21 @@ const UserVerification = () => {
                 
                 <div className="flex gap-4">
                   {!isCapturing ? (
-                    <Button onClick={startCamera} className="flex-1">
-                      Start Camera
-                    </Button>
-                  ) : (
                     <>
+                      <Button onClick={startCamera} className="flex-1">
+                        Start Camera
+                      </Button>
+                      <Button variant="secondary" onClick={triggerFileInput}>
+                        Upload/Take Photo
+                      </Button>
+                    </>
+                  ) : (
+                    <> 
                       <Button onClick={captureImage} className="flex-1">
                         Capture Photo
+                      </Button>
+                      <Button onClick={() => videoRef.current?.play()} variant="outline">
+                        Play Video
                       </Button>
                       <Button onClick={stopCamera} variant="outline">
                         Stop Camera
@@ -232,6 +274,14 @@ const UserVerification = () => {
           </CardContent>
         </Card>
 
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="user"
+          className="hidden"
+          onChange={onFileSelected}
+        />
         <canvas ref={canvasRef} className="hidden" />
       </div>
     </div>
